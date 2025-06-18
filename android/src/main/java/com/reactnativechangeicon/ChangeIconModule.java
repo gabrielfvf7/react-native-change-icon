@@ -100,11 +100,11 @@ public class ChangeIconModule extends ReactContextBaseJavaModule implements Appl
         if (activity == null)
             return;
         
-        classesToKill.remove(componentClass);
         classesToKill.forEach((cls) -> activity.getPackageManager().setComponentEnabledSetting(
                 new ComponentName(this.packageName, cls),
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                 PackageManager.DONT_KILL_APP));
+        classesToKill.remove(componentClass);
         classesToKill.clear();
         iconChanged = false;
     }

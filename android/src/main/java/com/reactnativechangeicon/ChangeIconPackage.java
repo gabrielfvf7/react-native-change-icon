@@ -22,7 +22,7 @@ public class ChangeIconPackage implements ReactPackage {
     @Override
     public List<NativeModule> createNativeModules(@NonNull ReactApplicationContext reactContext) {
         List<NativeModule> modules = new ArrayList<>();
-        modules.add(new ChangeIconModule(reactContext, "br.com.meliuz"));
+        modules.add(new ChangeIconModule(reactContext, this.packageName));
         return modules;
     }
 
