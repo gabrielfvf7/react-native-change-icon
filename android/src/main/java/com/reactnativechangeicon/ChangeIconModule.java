@@ -2,6 +2,7 @@ package com.reactnativechangeicon;
 
 import androidx.annotation.NonNull;
 import android.util.Log;
+import android.content.Intent;
 import android.app.Activity;
 import android.app.Application;
 import android.content.pm.PackageManager;
