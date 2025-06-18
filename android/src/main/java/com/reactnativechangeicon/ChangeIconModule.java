@@ -59,39 +59,70 @@ public class ChangeIconModule extends ReactContextBaseJavaModule implements Appl
         return;
     }
 
-    @ReactMethod
-    public void changeIcon(String iconName, Promise promise) {
-        final Activity activity = getCurrentActivity();
-        final String activityName = activity.getComponentName().getClassName();
-        if (activity == null) {
-            promise.reject("ANDROID:ACTIVITY_NOT_FOUND");
-            return;
-        }
-        if (this.componentClass.isEmpty()) {
-            this.componentClass = activityName.endsWith("MainActivity") ? activityName + "Default" : activityName;
+ @ReactMethod
+public void changeIcon(String iconName, Promise promise) {
+    final Activity activity = getCurrentActivity();
+    if (activity == null) {
+        promise.reject("ANDROID:ACTIVITY_NOT_FOUND");
+        return;
+    }
+
+    final String newIconName = (iconName == null || iconName.isEmpty()) ? "Default" : iconName;
+    final String activeClass = "br.com.meliuz" + ".MainActivity" + newIconName;
+
+    Log.d("ICON_CHANGE", "Iniciando mudança de ícone");
+    Log.d("ICON_CHANGE", "Novo ícone solicitado: " + newIconName);
+    Log.d("ICON_CHANGE", "Classe ativa atual: " + this.componentClass);
+    Log.d("ICON_CHANGE", "Nova classe a ser ativada: " + activeClass);
+
+    if (this.componentClass.equals(activeClass)) {
+        Log.w("ICON_CHANGE", "Ícone já está em uso: " + this.componentClass);
+        promise.reject("ANDROID:ICON_ALREADY_USED:" + this.componentClass);
+        return;
+    }
+
+    try {
+        // 1. Desabilita o ícone atual (se existir)
+        if (!this.componentClass.isEmpty()) {
+            Log.d("ICON_CHANGE", "Desativando classe atual: " + this.componentClass);
+            activity.getPackageManager().setComponentEnabledSetting(
+                new ComponentName(this.packageName, this.componentClass),
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            );
+            Log.d("ICON_CHANGE", "Classe desativada com sucesso: " + this.componentClass);
+        } else {
+            Log.d("ICON_CHANGE", "Nenhuma classe ativa para desativar (primeira execução)");
         }
 
-        final String newIconName = (iconName == null || iconName.isEmpty()) ? "Default" : iconName;
-        final String activeClass = "br.com.meliuz" + ".MainActivity" + newIconName;
-        if (this.componentClass.equals(activeClass)) {
-            promise.reject("ANDROID:ICON_ALREADY_USED:" + this.componentClass);
-            return;
-        }
-        try {
-            activity.getPackageManager().setComponentEnabledSetting(
-                    new ComponentName(this.packageName, activeClass),
-                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                    PackageManager.DONT_KILL_APP);
-            promise.resolve(newIconName);
-        } catch (Exception e) {
-            promise.reject("ANDROID:ICON_INVALID");
-            return;
-        }
-        this.classesToKill.add(this.componentClass);
+        // 2. Habilita o novo ícone
+        Log.d("ICON_CHANGE", "Ativando nova classe: " + activeClass);
+        activity.getPackageManager().setComponentEnabledSetting(
+            new ComponentName(this.packageName, activeClass),
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            PackageManager.DONT_KILL_APP
+        );
+        Log.d("ICON_CHANGE", "Nova classe ativada com sucesso: " + activeClass);
+
+        // 3. Força atualização do launcher
+        Log.d("ICON_CHANGE", "Forçando atualização do launcher");
+        Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.addCategory(Intent.CATEGORY_HOME);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        activity.startActivity(intent);
+        Log.d("ICON_CHANGE", "Launcher atualizado");
+
+        // 4. Atualiza estado interno
         this.componentClass = activeClass;
-        activity.getApplication().registerActivityLifecycleCallbacks(this);
         iconChanged = true;
+
+        Log.d("ICON_CHANGE", "Mudança de ícone concluída com sucesso");
+        promise.resolve(newIconName);
+    } catch (Exception e) {
+        Log.e("ICON_CHANGE", "Erro ao mudar ícone", e);
+        promise.reject("ANDROID:ICON_INVALID", e.getMessage());
     }
+}
 
     private void completeIconChange() {
         if (!iconChanged)
