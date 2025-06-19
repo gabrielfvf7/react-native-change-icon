@@ -80,43 +80,58 @@ public class ChangeIconModule extends ReactContextBaseJavaModule implements Appl
         }
 
         final String newIconName = (iconName == null || iconName.isEmpty()) ? "Default" : iconName;
-        String basePackage = getBasePackageName();
-        final String activeClass = basePackage + ".MainActivity" + newIconName;
+        final String currentPackage = reactContext.getPackageName(); // Usa o package atual (com .debug se for o caso)
+        final String activeClass = currentPackage + ".MainActivity" + newIconName;
 
-        Log.d("ICON_CHANGE", "Iniciando mudança de ícone para: " + newIconName);
+           Log.d("ICON_CHANGE", "Mudança de ícone solicitada: " + newIconName);
+        Log.d("ICON_CHANGE", "Package atual: " + currentPackage);
         Log.d("ICON_CHANGE", "Classe alvo: " + activeClass);
-        Log.d("ICON_CHANGE", "Package name: " + reactContext.getPackageName());
-        Log.d("ICON_CHANGE", "Base package: " + basePackage);
 
         try {
             PackageManager pm = activity.getPackageManager();
+
+              // 1. Verifica se o componente existe antes de tentar modificá-lo
+            ComponentName targetComponent = new ComponentName(currentPackage, activeClass);
+            try {
+                pm.getActivityInfo(targetComponent, 0); // Verifica se o componente existe
+            } catch (PackageManager.NameNotFoundException e) {
+                promise.reject("ANDROID:COMPONENT_NOT_FOUND", "Componente não encontrado: " + activeClass);
+                return;
+            }
             
-            // 1. Desativa todos os aliases existentes
-            String[] aliases = {"Default", "Mucura"}; // Adicione todos os seus aliases aqui
+           // 2. Desativa todos os aliases existentes
+            String[] aliases = {"Default", "Mucura"};
             for (String alias : aliases) {
-                String className = basePackage + ".MainActivity" + alias;
+                String className = currentPackage + ".MainActivity" + alias;
                 if (!className.equals(activeClass)) {
-                    Log.d("ICON_CHANGE", "Desativando alias: " + className);
-                    pm.setComponentEnabledSetting(
-                        new ComponentName(basePackage, className),
-                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                        PackageManager.DONT_KILL_APP
-                    );
+                    try {
+                        ComponentName component = new ComponentName(currentPackage, className);
+                        pm.getActivityInfo(component, 0); // Verifica se existe
+                        
+                        Log.d("ICON_CHANGE", "Desativando alias: " + className);
+                        pm.setComponentEnabledSetting(
+                            component,
+                            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                            PackageManager.DONT_KILL_APP
+                        );
+                    } catch (PackageManager.NameNotFoundException e) {
+                        Log.w("ICON_CHANGE", "Alias não encontrado, ignorando: " + className);
+                    }
                 }
             }
 
-            // 2. Ativa o novo alias
+             // 3. Ativa o novo alias
             Log.d("ICON_CHANGE", "Ativando alias: " + activeClass);
             pm.setComponentEnabledSetting(
-                new ComponentName(basePackage, activeClass),
+                targetComponent,
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                 PackageManager.DONT_KILL_APP
             );
 
-            // 3. Atualiza o estado interno
+            // 4. Atualiza o estado interno
             this.componentClass = activeClass;
 
-            // 4. Delay antes de atualizar o launcher (300ms)
+            // 5. Delay antes de atualizar o launcher (300ms)
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 try {
                     Log.d("ICON_CHANGE", "Forçando atualização do launcher após delay");
