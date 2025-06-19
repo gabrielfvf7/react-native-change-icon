@@ -16,18 +16,21 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.module.annotations.ReactModule;
 
+import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @ReactModule(name = "ChangeIcon")
 public class ChangeIconModule extends ReactContextBaseJavaModule implements Application.ActivityLifecycleCallbacks {
     public static final String NAME = "ChangeIcon";
+    private static final String TAG = "ICON_CHANGE";
     private final ReactApplicationContext reactContext;
     private final Set<String> classesToKill = new HashSet<>();
     private Boolean iconChanged = false;
     private String componentClass = "";
 
-    public ChangeIconModule(ReactApplicationContext reactContext, String packageName) {
+    public ChangeIconModule(ReactApplicationContext reactContext) {
         super(reactContext);
         this.reactContext = reactContext;
     }
@@ -42,161 +45,195 @@ public class ChangeIconModule extends ReactContextBaseJavaModule implements Appl
     private String getBasePackageName() {
         String packageName = reactContext.getPackageName();
         if (packageName.endsWith(".debug")) {
-            return packageName.substring(0, packageName.length() - 6); // Remove .debug
+            return packageName.substring(0, packageName.length() - 6);
         }
         return packageName;
     }
 
+    private List<String> getValidAliases() {
+        return Arrays.asList("Default", "Mucura");
+    }
+
     @ReactMethod
     public void getIcon(Promise promise) {
-        final Activity activity = getCurrentActivity();
-        if (activity == null) {
-            promise.reject("ANDROID:ACTIVITY_NOT_FOUND");
-            return;
-        }
-
-        final String activityName = activity.getComponentName().getClassName();
-        String basePackage = getBasePackageName();
-
-        if (activityName.endsWith("MainActivity")) {
+        try {
+            Activity activity = getCurrentActivity();
+            if (activity == null) {
+                Log.e(TAG, "getIcon: Activity não encontrada");
+                promise.reject("ANDROID:ACTIVITY_NOT_FOUND");
+                return;
+            }
+            
+            ComponentName component = activity.getComponentName();
+            String className = component.getClassName();
+            Log.d(TAG, "Classe da atividade atual: " + className);
+            
+            for (String alias : getValidAliases()) {
+                if (className.endsWith("MainActivity" + alias)) {
+                    Log.d(TAG, "Ícone atual encontrado: " + alias);
+                    promise.resolve(alias);
+                    return;
+                }
+            }
+            
+            Log.w(TAG, "Nenhum alias correspondente encontrado. Usando fallback Default");
             promise.resolve("Default");
-            return;
+        } catch (Exception e) {
+            Log.e(TAG, "Erro ao obter ícone: " + e.getMessage(), e);
+            promise.reject("ANDROID:ICON_ERROR", e.getMessage());
         }
-        
-        String[] activityNameSplit = activityName.split("MainActivity");
-        if (activityNameSplit.length != 2) {
-            promise.reject("ANDROID:UNEXPECTED_COMPONENT_CLASS:" + this.componentClass);
-            return;
-        }
-        promise.resolve(activityNameSplit[1]);
     }
 
     @ReactMethod
     public void changeIcon(String iconName, Promise promise) {
         final Activity activity = getCurrentActivity();
         if (activity == null) {
+            Log.e(TAG, "changeIcon: Activity não encontrada");
             promise.reject("ANDROID:ACTIVITY_NOT_FOUND");
             return;
         }
 
         final String newIconName = (iconName == null || iconName.isEmpty()) ? "Default" : iconName;
-        final String currentPackage = reactContext.getPackageName(); // Usa o package atual (com .debug se for o caso)
+        final String currentPackage = reactContext.getPackageName();
         final String activeClass = currentPackage + ".MainActivity" + newIconName;
 
-           Log.d("ICON_CHANGE", "Mudança de ícone solicitada: " + newIconName);
-        Log.d("ICON_CHANGE", "Package atual: " + currentPackage);
-        Log.d("ICON_CHANGE", "Classe alvo: " + activeClass);
+        Log.d(TAG, "Iniciando mudança de ícone: " + newIconName);
+        Log.d(TAG, "Package atual: " + currentPackage);
+        Log.d(TAG, "Classe alvo: " + activeClass);
+
+        // Verificação de alias válido
+        if (!getValidAliases().contains(newIconName)) {
+            Log.e(TAG, "Ícone inválido: " + newIconName);
+            promise.reject("ANDROID:INVALID_ICON", "Ícone inválido: " + newIconName);
+            return;
+        }
 
         try {
             PackageManager pm = activity.getPackageManager();
+            List<String> aliases = getValidAliases();
 
-              // 1. Verifica se o componente existe antes de tentar modificá-lo
+            Log.d(TAG, "Desativando todos os aliases...");
+            // Desativar todos os aliases primeiro
+            for (String alias : aliases) {
+                String className = currentPackage + ".MainActivity" + alias;
+                ComponentName component = new ComponentName(currentPackage, className);
+                
+                try {
+                    // Verificar se o componente existe
+                    pm.getActivityInfo(component, 0);
+                    Log.d(TAG, "Desativando alias: " + className);
+                    
+                    pm.setComponentEnabledSetting(
+                        component,
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP
+                    );
+                } catch (PackageManager.NameNotFoundException e) {
+                    Log.w(TAG, "Alias não encontrado (ignorado): " + className);
+                }
+            }
+
+            // Ativar o novo alias
+            Log.d(TAG, "Ativando novo alias: " + activeClass);
             ComponentName targetComponent = new ComponentName(currentPackage, activeClass);
+            
+            // Verificar se o componente existe antes de ativar
             try {
-                pm.getActivityInfo(targetComponent, 0); // Verifica se o componente existe
+                pm.getActivityInfo(targetComponent, 0);
             } catch (PackageManager.NameNotFoundException e) {
+                Log.e(TAG, "Componente alvo não encontrado: " + activeClass, e);
                 promise.reject("ANDROID:COMPONENT_NOT_FOUND", "Componente não encontrado: " + activeClass);
                 return;
             }
             
-           // 2. Desativa todos os aliases existentes
-            String[] aliases = {"Default", "Mucura"};
-            for (String alias : aliases) {
-                String className = currentPackage + ".MainActivity" + alias;
-                if (!className.equals(activeClass)) {
-                    try {
-                        ComponentName component = new ComponentName(currentPackage, className);
-                        pm.getActivityInfo(component, 0); // Verifica se existe
-                        
-                        Log.d("ICON_CHANGE", "Desativando alias: " + className);
-                        pm.setComponentEnabledSetting(
-                            component,
-                            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                            PackageManager.DONT_KILL_APP
-                        );
-                    } catch (PackageManager.NameNotFoundException e) {
-                        Log.w("ICON_CHANGE", "Alias não encontrado, ignorando: " + className);
-                    }
-                }
-            }
-
-             // 3. Ativa o novo alias
-            Log.d("ICON_CHANGE", "Ativando alias: " + activeClass);
             pm.setComponentEnabledSetting(
                 targetComponent,
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                 PackageManager.DONT_KILL_APP
             );
 
-            // 4. Atualiza o estado interno
+            // Atualizar estado interno
             this.componentClass = activeClass;
+            this.iconChanged = true;
 
-            // 5. Delay antes de atualizar o launcher (300ms)
+            // Atualizar o launcher após um delay
+            Log.d(TAG, "Agendando atualização do launcher...");
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 try {
-                    Log.d("ICON_CHANGE", "Forçando atualização do launcher após delay");
+                    Log.d(TAG, "Forçando atualização do launcher");
                     Intent intent = new Intent(Intent.ACTION_MAIN);
                     intent.addCategory(Intent.CATEGORY_HOME);
                     intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     activity.startActivity(intent);
                     
-                    Log.d("ICON_CHANGE", "Mudança de ícone concluída com sucesso");
+                    Log.d(TAG, "Mudança de ícone concluída com sucesso: " + newIconName);
                     promise.resolve(newIconName);
                 } catch (Exception e) {
-                    Log.e("ICON_CHANGE", "Erro ao atualizar launcher", e);
+                    Log.e(TAG, "Erro ao atualizar launcher", e);
                     promise.reject("ANDROID:LAUNCHER_UPDATE_FAILED", e.getMessage());
                 }
             }, 300);
 
         } catch (Exception e) {
-            Log.e("ICON_CHANGE", "Erro ao mudar ícone", e);
+            Log.e(TAG, "Erro crítico ao mudar ícone", e);
             promise.reject("ANDROID:ICON_CHANGE_FAILED", e.getMessage());
         }
     }
 
     private void completeIconChange() {
-        if (!iconChanged)
+        if (!iconChanged) {
+            Log.d(TAG, "completeIconChange: Nenhuma mudança pendente");
             return;
-        final Activity activity = getCurrentActivity();
-        if (activity == null)
-            return;
+        }
         
+        final Activity activity = getCurrentActivity();
+        if (activity == null) {
+            Log.w(TAG, "completeIconChange: Activity não disponível");
+            return;
+        }
+        
+        Log.d(TAG, "Finalizando mudança de ícone...");
         String basePackage = getBasePackageName();
-        classesToKill.forEach((cls) -> activity.getPackageManager().setComponentEnabledSetting(
-                new ComponentName(basePackage, cls),
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                PackageManager.DONT_KILL_APP));
-        classesToKill.remove(componentClass);
+        
+        classesToKill.forEach((cls) -> {
+            try {
+                Log.d(TAG, "Desativando classe: " + cls);
+                activity.getPackageManager().setComponentEnabledSetting(
+                    new ComponentName(basePackage, cls),
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP
+                );
+            } catch (Exception e) {
+                Log.e(TAG, "Erro ao desativar componente: " + cls, e);
+            }
+        });
+        
         classesToKill.clear();
         iconChanged = false;
+        Log.d(TAG, "Processo de mudança de ícone finalizado");
     }
 
+    // Métodos do ciclo de vida (mantidos para compatibilidade)
     @Override
     public void onActivityPaused(Activity activity) {
         completeIconChange();
     }
 
     @Override
-    public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
-    }
+    public void onActivityCreated(Activity activity, Bundle savedInstanceState) {}
 
     @Override
-    public void onActivityStarted(Activity activity) {
-    }
+    public void onActivityStarted(Activity activity) {}
 
     @Override
-    public void onActivityResumed(Activity activity) {
-    }
+    public void onActivityResumed(Activity activity) {}
 
     @Override
-    public void onActivityStopped(Activity activity) {
-    }
+    public void onActivityStopped(Activity activity) {}
 
     @Override
-    public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
-    }
+    public void onActivitySaveInstanceState(Activity activity, Bundle outState) {}
 
     @Override
-    public void onActivityDestroyed(Activity activity) {
-    }
+    public void onActivityDestroyed(Activity activity) {}
 }
