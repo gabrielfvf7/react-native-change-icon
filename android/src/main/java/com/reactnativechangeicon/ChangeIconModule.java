@@ -69,7 +69,7 @@ public void changeIcon(String iconName, Promise promise) {
     }
 
     final String newIconName = (iconName == null || iconName.isEmpty()) ? "Default" : iconName;
-    final String activeClass = "br.com.meliuz" + ".MainActivity" + newIconName;
+    final String activeClass = this.package + ".MainActivity" + newIconName;
 
     Log.d("ICON_CHANGE", "Iniciando mudança de ícone");
     Log.d("ICON_CHANGE", "Novo ícone solicitado: " + newIconName);
