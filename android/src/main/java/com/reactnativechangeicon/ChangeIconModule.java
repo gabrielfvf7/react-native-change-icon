@@ -27,7 +27,7 @@ public class ChangeIconModule extends ReactContextBaseJavaModule implements Appl
     private Boolean iconChanged = false;
     private String componentClass = "";
 
-    public ChangeIconModule(ReactApplicationContext reactContext) {
+    public ChangeIconModule(ReactApplicationContext reactContext, String packageName) {
         super(reactContext);
         this.reactContext = reactContext;
     }
