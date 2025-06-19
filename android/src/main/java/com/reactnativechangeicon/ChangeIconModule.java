@@ -8,7 +8,8 @@ import android.app.Application;
 import android.content.pm.PackageManager;
 import android.content.ComponentName;
 import android.os.Bundle;
-
+import android.os.Handler;
+import android.os.Looper;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
@@ -71,57 +72,57 @@ public void changeIcon(String iconName, Promise promise) {
     final String newIconName = (iconName == null || iconName.isEmpty()) ? "Default" : iconName;
     final String activeClass = this.packageName + ".MainActivity" + newIconName;
 
-    Log.d("ICON_CHANGE", "Iniciando mudança de ícone");
-    Log.d("ICON_CHANGE", "Novo ícone solicitado: " + newIconName);
-    Log.d("ICON_CHANGE", "Classe ativa atual: " + this.componentClass);
-    Log.d("ICON_CHANGE", "Nova classe a ser ativada: " + activeClass);
-
-    if (this.componentClass.equals(activeClass)) {
-        Log.w("ICON_CHANGE", "Ícone já está em uso: " + this.componentClass);
-        promise.reject("ANDROID:ICON_ALREADY_USED:" + this.componentClass);
-        return;
-    }
+    Log.d("ICON_CHANGE", "Iniciando mudança de ícone para: " + newIconName);
+    Log.d("ICON_CHANGE", "Classe alvo: " + activeClass);
 
     try {
-        // 1. Desabilita o ícone atual (se existir)
-        if (!this.componentClass.isEmpty()) {
-            Log.d("ICON_CHANGE", "Desativando classe atual: " + this.componentClass);
-            activity.getPackageManager().setComponentEnabledSetting(
-                new ComponentName(this.packageName, this.componentClass),
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                PackageManager.DONT_KILL_APP
-            );
-            Log.d("ICON_CHANGE", "Classe desativada com sucesso: " + this.componentClass);
-        } else {
-            Log.d("ICON_CHANGE", "Nenhuma classe ativa para desativar (primeira execução)");
+        PackageManager pm = activity.getPackageManager();
+        
+        // 1. Desativa todos os aliases existentes
+        String[] aliases = {"Default", "Mucura"}; // Adicione todos os seus aliases aqui
+        for (String alias : aliases) {
+            String className = this.packageName + ".MainActivity" + alias;
+            if (!className.equals(activeClass)) {
+                Log.d("ICON_CHANGE", "Desativando alias: " + className);
+                pm.setComponentEnabledSetting(
+                    new ComponentName(this.packageName, className),
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP
+                );
+            }
         }
 
-        // 2. Habilita o novo ícone
-        Log.d("ICON_CHANGE", "Ativando nova classe: " + activeClass);
-        activity.getPackageManager().setComponentEnabledSetting(
+        // 2. Ativa o novo alias
+        Log.d("ICON_CHANGE", "Ativando alias: " + activeClass);
+        pm.setComponentEnabledSetting(
             new ComponentName(this.packageName, activeClass),
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
             PackageManager.DONT_KILL_APP
         );
-        Log.d("ICON_CHANGE", "Nova classe ativada com sucesso: " + activeClass);
 
-        // 3. Força atualização do launcher
-        Log.d("ICON_CHANGE", "Forçando atualização do launcher");
-        Intent intent = new Intent(Intent.ACTION_MAIN);
-        intent.addCategory(Intent.CATEGORY_HOME);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        activity.startActivity(intent);
-        Log.d("ICON_CHANGE", "Launcher atualizado");
-
-        // 4. Atualiza estado interno
+        // 3. Atualiza o estado interno
         this.componentClass = activeClass;
-        iconChanged = true;
 
-        Log.d("ICON_CHANGE", "Mudança de ícone concluída com sucesso");
-        promise.resolve(newIconName);
+        // 4. Delay antes de atualizar o launcher (300ms)
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                Log.d("ICON_CHANGE", "Forçando atualização do launcher após delay");
+                Intent intent = new Intent(Intent.ACTION_MAIN);
+                intent.addCategory(Intent.CATEGORY_HOME);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(intent);
+                
+                Log.d("ICON_CHANGE", "Mudança de ícone concluída com sucesso");
+                promise.resolve(newIconName);
+            } catch (Exception e) {
+                Log.e("ICON_CHANGE", "Erro ao atualizar launcher", e);
+                promise.reject("ANDROID:LAUNCHER_UPDATE_FAILED", e.getMessage());
+            }
+        }, 300); // Delay de 300ms
+
     } catch (Exception e) {
         Log.e("ICON_CHANGE", "Erro ao mudar ícone", e);
-        promise.reject("ANDROID:ICON_INVALID", e.getMessage());
+        promise.reject("ANDROID:ICON_CHANGE_FAILED", e.getMessage());
     }
 }
 
