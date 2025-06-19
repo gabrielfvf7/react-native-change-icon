@@ -68,8 +68,15 @@ public class ChangeIconModule extends ReactContextBaseJavaModule implements Appl
             String className = component.getClassName();
             Log.d(TAG, "Classe da atividade atual: " + className);
             
+            // Verificar tanto com sufixo debug quanto sem
+            String basePackage = getBasePackageName();
+            String debugPackage = basePackage + ".debug";
+            
             for (String alias : getValidAliases()) {
-                if (className.endsWith("MainActivity" + alias)) {
+                String fullAlias = basePackage + ".MainActivity" + alias;
+                String debugAlias = debugPackage + ".MainActivity" + alias;
+                
+                if (className.equals(fullAlias) || className.equals(debugAlias)) {
                     Log.d(TAG, "Ícone atual encontrado: " + alias);
                     promise.resolve(alias);
                     return;
@@ -94,12 +101,20 @@ public class ChangeIconModule extends ReactContextBaseJavaModule implements Appl
         }
 
         final String newIconName = (iconName == null || iconName.isEmpty()) ? "Default" : iconName;
+        final String basePackage = getBasePackageName();
+        final String debugPackage = basePackage + ".debug";
         final String currentPackage = reactContext.getPackageName();
-        final String activeClass = currentPackage + ".MainActivity" + newIconName;
+        
+        // Criar ambos os nomes possíveis (com e sem .debug)
+        final String activeClassBase = basePackage + ".MainActivity" + newIconName;
+        final String activeClassDebug = debugPackage + ".MainActivity" + newIconName;
 
         Log.d(TAG, "Iniciando mudança de ícone: " + newIconName);
+        Log.d(TAG, "Package base: " + basePackage);
+        Log.d(TAG, "Package debug: " + debugPackage);
         Log.d(TAG, "Package atual: " + currentPackage);
-        Log.d(TAG, "Classe alvo: " + activeClass);
+        Log.d(TAG, "Classe base alvo: " + activeClassBase);
+        Log.d(TAG, "Classe debug alvo: " + activeClassDebug);
 
         // Verificação de alias válido
         if (!getValidAliases().contains(newIconName)) {
@@ -113,39 +128,73 @@ public class ChangeIconModule extends ReactContextBaseJavaModule implements Appl
             List<String> aliases = getValidAliases();
 
             Log.d(TAG, "Desativando todos os aliases...");
-            // Desativar todos os aliases primeiro
+            // Desativar todos os aliases em ambos os pacotes
             for (String alias : aliases) {
-                String className = currentPackage + ".MainActivity" + alias;
-                ComponentName component = new ComponentName(currentPackage, className);
-                
-                try {
-                    // Verificar se o componente existe
-                    pm.getActivityInfo(component, 0);
-                    Log.d(TAG, "Desativando alias: " + className);
+                // Tentar ambos os pacotes (base e debug)
+                String[] packages = {basePackage, debugPackage};
+                for (String pkg : packages) {
+                    String className = pkg + ".MainActivity" + alias;
+                    ComponentName component = new ComponentName(pkg, className);
                     
-                    pm.setComponentEnabledSetting(
-                        component,
-                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                        PackageManager.DONT_KILL_APP
-                    );
+                    try {
+                        // Verificar se o componente existe
+                        pm.getActivityInfo(component, 0);
+                        Log.d(TAG, "Desativando alias: " + className);
+                        
+                        pm.setComponentEnabledSetting(
+                            component,
+                            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                            PackageManager.DONT_KILL_APP
+                        );
+                    } catch (PackageManager.NameNotFoundException e) {
+                        Log.w(TAG, "Alias não encontrado (ignorado): " + className);
+                    }
+                }
+            }
+
+            // Determinar qual componente ativar (base ou debug)
+            String activeClassToUse = null;
+            ComponentName targetComponent = null;
+            
+            // Tentar encontrar o componente no pacote atual primeiro
+            String classNameCurrent = currentPackage + ".MainActivity" + newIconName;
+            try {
+                targetComponent = new ComponentName(currentPackage, classNameCurrent);
+                pm.getActivityInfo(targetComponent, 0);
+                activeClassToUse = classNameCurrent;
+                Log.d(TAG, "Usando componente do pacote atual: " + classNameCurrent);
+            } catch (PackageManager.NameNotFoundException e) {
+                Log.w(TAG, "Componente não encontrado no pacote atual: " + classNameCurrent);
+            }
+            
+            // Se não encontrou no pacote atual, tentar no base
+            if (activeClassToUse == null) {
+                try {
+                    targetComponent = new ComponentName(basePackage, activeClassBase);
+                    pm.getActivityInfo(targetComponent, 0);
+                    activeClassToUse = activeClassBase;
+                    Log.d(TAG, "Usando componente base: " + activeClassBase);
                 } catch (PackageManager.NameNotFoundException e) {
-                    Log.w(TAG, "Alias não encontrado (ignorado): " + className);
+                    Log.w(TAG, "Componente não encontrado no pacote base: " + activeClassBase);
+                }
+            }
+            
+            // Se ainda não encontrou, tentar no debug
+            if (activeClassToUse == null) {
+                try {
+                    targetComponent = new ComponentName(debugPackage, activeClassDebug);
+                    pm.getActivityInfo(targetComponent, 0);
+                    activeClassToUse = activeClassDebug;
+                    Log.d(TAG, "Usando componente debug: " + activeClassDebug);
+                } catch (PackageManager.NameNotFoundException e) {
+                    Log.e(TAG, "Componente não encontrado em nenhum pacote: " + activeClassDebug);
+                    promise.reject("ANDROID:COMPONENT_NOT_FOUND", "Componente não encontrado em nenhum pacote");
+                    return;
                 }
             }
 
             // Ativar o novo alias
-            Log.d(TAG, "Ativando novo alias: " + activeClass);
-            ComponentName targetComponent = new ComponentName(currentPackage, activeClass);
-            
-            // Verificar se o componente existe antes de ativar
-            try {
-                pm.getActivityInfo(targetComponent, 0);
-            } catch (PackageManager.NameNotFoundException e) {
-                Log.e(TAG, "Componente alvo não encontrado: " + activeClass, e);
-                promise.reject("ANDROID:COMPONENT_NOT_FOUND", "Componente não encontrado: " + activeClass);
-                return;
-            }
-            
+            Log.d(TAG, "Ativando novo alias: " + activeClassToUse);
             pm.setComponentEnabledSetting(
                 targetComponent,
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
@@ -153,7 +202,7 @@ public class ChangeIconModule extends ReactContextBaseJavaModule implements Appl
             );
 
             // Atualizar estado interno
-            this.componentClass = activeClass;
+            this.componentClass = activeClassToUse;
             this.iconChanged = true;
 
             // Atualizar o launcher após um delay
@@ -194,15 +243,35 @@ public class ChangeIconModule extends ReactContextBaseJavaModule implements Appl
         
         Log.d(TAG, "Finalizando mudança de ícone...");
         String basePackage = getBasePackageName();
+        String debugPackage = basePackage + ".debug";
         
         classesToKill.forEach((cls) -> {
             try {
                 Log.d(TAG, "Desativando classe: " + cls);
-                activity.getPackageManager().setComponentEnabledSetting(
-                    new ComponentName(basePackage, cls),
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    PackageManager.DONT_KILL_APP
-                );
+                
+                // Tentar desativar em ambos os pacotes
+                ComponentName baseComponent = new ComponentName(basePackage, cls);
+                ComponentName debugComponent = new ComponentName(debugPackage, cls);
+                
+                try {
+                    activity.getPackageManager().setComponentEnabledSetting(
+                        baseComponent,
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP
+                    );
+                } catch (Exception e) {
+                    Log.w(TAG, "Erro ao desativar componente base: " + cls, e);
+                }
+                
+                try {
+                    activity.getPackageManager().setComponentEnabledSetting(
+                        debugComponent,
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP
+                    );
+                } catch (Exception e) {
+                    Log.w(TAG, "Erro ao desativar componente debug: " + cls, e);
+                }
             } catch (Exception e) {
                 Log.e(TAG, "Erro ao desativar componente: " + cls, e);
             }
@@ -213,7 +282,7 @@ public class ChangeIconModule extends ReactContextBaseJavaModule implements Appl
         Log.d(TAG, "Processo de mudança de ícone finalizado");
     }
 
-    // Métodos do ciclo de vida (mantidos para compatibilidade)
+    // Métodos do ciclo de vida
     @Override
     public void onActivityPaused(Activity activity) {
         completeIconChange();
